@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
+const fs = require('fs');
 
 // SOLUCIÓN: Agregar fetch para Node.js
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
