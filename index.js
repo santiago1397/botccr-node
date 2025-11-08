@@ -448,7 +448,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-async function processImage() {
+async function processImage(message) {
   const from = message.from;
   console.log(`👤 ${from}: image`);
 
