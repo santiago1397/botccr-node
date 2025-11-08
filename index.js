@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 
 // SOLUCIÓN: Agregar fetch para Node.js
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 globalThis.fetch = fetch;
 
 const OpenAI = require('openai');
@@ -396,7 +396,7 @@ app.get('/webhook', (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   console.log('🔐 Verificando webhook...', { mode, token });
-  
+
   if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
     console.log('✅ Webhook verificado correctamente');
     res.status(200).send(challenge);
@@ -410,7 +410,7 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', async (req, res) => {
   try {
     console.log('📨 Webhook recibido');
-    
+
     if (!req.body.entry) {
       console.log('⚠️  Estructura de webhook inválida');
       return res.sendStatus(200);
@@ -418,21 +418,20 @@ app.post('/webhook', async (req, res) => {
 
     const entry = req.body.entry[0];
     const changes = entry.changes[0];
-    
+
     // Verificar si es un mensaje
     if (changes.value.messages && changes.value.messages.length > 0) {
       const message = changes.value.messages[0];
-      
+
       if (message.type === 'text') {
         await processMessage(message);
 
       } else if (message.type === 'audio') {
         console.log(message)
-        console.log('🎤 Mensaje de audio recibido, procesando transcripción...'); 
+        console.log('🎤 Mensaje de audio recibido, procesando transcripción...');
 
       } else if (message.type === 'image') {
-        console.log(message)
-        console.log('🖼️ Mensaje de imagen recibido, procesando...');
+        await processMessage(message)
 
       } else {
         console.log(`📎 Mensaje de tipo: ${message.type}`);
@@ -441,7 +440,7 @@ app.post('/webhook', async (req, res) => {
     } else {
       console.log('📢 Evento de webhook (no mensaje):', changes.value.statuses ? 'status' : 'other');
     }
-    
+
     res.sendStatus(200);
   } catch (error) {
     console.error('❌ Error procesando webhook:', error);
@@ -449,26 +448,101 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
+async function processImage() {
+  const from = message.from;
+  console.log(`👤 ${from}: image`);
+
+  if (!userSessions.has(from)) {
+    userSessions.set(from, [{ role: 'system', content: GERMAN_PROMPT }]);
+    console.log(`🆕 Nueva sesión para: ${from} (prompt agregado)`);
+  }
+
+  const userSession = userSessions.get(from);
+
+  const response = await axios.get(
+    `https://graph.facebook.com/v18.0/${message.image.id}`, {
+    headers: {
+      'Authorization': `Bearer ${process.env.META_ACCESS_TOKEN}`
+    }
+  })
+
+
+  userSession.push({
+    role: 'user', content: [
+      {
+        type: "image_url",
+        image_url: {
+          url: response.url
+        }
+      },
+    ]
+  });
+
+
+  const MAX_CONTEXT_MESSAGES = 12; // configurable si lo deseas
+  const hasSystem = userSession.length > 0 && userSession[0].role === 'system';
+  const startIndex = hasSystem ? 1 : 0;
+  const nonSystemCount = userSession.length - startIndex;
+  if (nonSystemCount > MAX_CONTEXT_MESSAGES) {
+    const removeCount = nonSystemCount - MAX_CONTEXT_MESSAGES;
+    // eliminar mensajes más antiguos (después del prompt)
+    userSession.splice(startIndex, removeCount);
+  }
+
+  try {
+    await sendTypingIndicator(from, true);
+
+    const aiResponse = await generateAIResponse(userSession, from);
+
+    await sendTypingIndicator(from, false);
+
+    userSession.push({ role: "assistant", content: aiResponse });
+
+    await sendWhatsAppMessage(from, aiResponse);
+
+    if (isSessionEnded(userSession)) {
+      userSessions.delete(from);
+    }
+  } catch (error) {
+    console.error('❌ Error procesando mensaje:', error);
+    await sendWhatsAppMessage(from, '⚠️ Lo siento, estoy teniendo problemas técnicos. Por favor intenta más tarde.');
+  }
+
+
+
+}
 // 3. PROCESAR MENSAJE CON IA
 async function processMessage(message) {
   const userMessage = message.text.body;
   const from = message.from;
-  
+
   console.log(`👤 ${from}: ${userMessage}`);
-  
+
+  // Crear sesión si no existe. Cada sesión comienza con un prompt de sistema
+  // que define la personalidad/rol del asistente (GERMAN_PROMPT). Guardamos
+  // el prompt como el primer mensaje con role:'system' y preservamos ese
+  // mensaje al recortar el historial.
   if (!userSessions.has(from)) {
-  userSessions.set(from, []);
-  console.log(`🆕 Nueva sesión para: ${from}`);
+    userSessions.set(from, [{ role: 'system', content: GERMAN_PROMPT }]);
+    console.log(`🆕 Nueva sesión para: ${from} (prompt agregado)`);
   }
-  
+
   const userSession = userSessions.get(from);
-  
-  userSession.push({ role: "user", content: userMessage });
-  
-  if (userSession.length > 12) {
-    userSession.splice(0, userSession.length - 12);
+
+  // Añadir mensaje del usuario
+  userSession.push({ role: 'user', content: userMessage });
+
+  // Mantener máximo N mensajes de contexto POR USUARIO, sin contar el prompt
+  const MAX_CONTEXT_MESSAGES = 12; // configurable si lo deseas
+  const hasSystem = userSession.length > 0 && userSession[0].role === 'system';
+  const startIndex = hasSystem ? 1 : 0;
+  const nonSystemCount = userSession.length - startIndex;
+  if (nonSystemCount > MAX_CONTEXT_MESSAGES) {
+    const removeCount = nonSystemCount - MAX_CONTEXT_MESSAGES;
+    // eliminar mensajes más antiguos (después del prompt)
+    userSession.splice(startIndex, removeCount);
   }
-  
+
   try {
     await sendTypingIndicator(from, true);
 
@@ -617,7 +691,7 @@ async function generateAIResponse(conversationHistory, userId) {
 
   try {
     const resp = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4.1-mini',
       messages: messages,
       temperature: 0.2,
       max_tokens: 800
