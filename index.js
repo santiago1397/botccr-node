@@ -10,6 +10,8 @@ const OpenAI = require('openai');
 
 const app = express();
 app.use(express.json());
+const staticFilesPath = "tmp"
+app.use('/tmp', express.static(staticFilesPath));
 
 // Inicializar OpenAI solo si se proporcionó la API key
 let openai = null;
@@ -468,13 +470,27 @@ async function processImage(message) {
 
   console.log(response.data)
 
+  const folder = `tmp`
+  const fileName = `tmp/${message.image.id}.jpeg`
+  if (!fs.existsSync(folder)) {
+    fs.mkdirSync(folder, { recursive: true })
+  }
+
+  const imageResponse = await axios.get(url, {
+    responseType: 'arraybuffer'
+  });
+
+  fs.writeFileSync(fileName, imageResponse.data);
+  console.log("imagen guardada")
+
+
 
   userSession.push({
     role: 'user', content: [
       {
         type: "image_url",
         image_url: {
-          url: response.data.url
+          url: `https://botccr-node.onrender.com/${fileName}`
         }
       },
     ]
