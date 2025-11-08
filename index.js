@@ -477,8 +477,11 @@ async function processImage(message) {
     fs.mkdirSync(folder, { recursive: true })
   }
 
-  const imageResponse = await axios.get(url, {
-    responseType: 'arraybuffer'
+  const imageResponse = await axios.get(response.data.url, {
+    responseType: 'arraybuffer',
+    headers: {
+      'Authorization': `Bearer ${process.env.META_ACCESS_TOKEN}`
+    }
   });
 
   fs.writeFileSync(fileName, imageResponse.data);
