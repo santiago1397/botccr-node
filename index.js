@@ -431,7 +431,7 @@ app.post('/webhook', async (req, res) => {
         console.log('🎤 Mensaje de audio recibido, procesando transcripción...');
 
       } else if (message.type === 'image') {
-        await processMessage(message)
+        await processImage(message)
 
       } else {
         console.log(`📎 Mensaje de tipo: ${message.type}`);
