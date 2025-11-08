@@ -466,7 +466,7 @@ async function processImage(message) {
     }
   })
 
-  console.log(response)
+  console.log(response.data)
 
 
   userSession.push({
@@ -474,7 +474,7 @@ async function processImage(message) {
       {
         type: "image_url",
         image_url: {
-          url: response.url
+          url: response.data.url
         }
       },
     ]
