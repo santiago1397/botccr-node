@@ -466,6 +466,8 @@ async function processImage(message) {
     }
   })
 
+  console.log(response)
+
 
   userSession.push({
     role: 'user', content: [
