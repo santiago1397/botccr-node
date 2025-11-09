@@ -430,8 +430,7 @@ app.post('/webhook', async (req, res) => {
         await processMessage(message);
 
       } else if (message.type === 'audio') {
-        console.log(message)
-        console.log('🎤 Mensaje de audio recibido, procesando transcripción...');
+        await processAudio(message)
 
       } else if (message.type === 'image') {
         await processImage(message)
@@ -450,6 +449,88 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+async function processAudio(message) {
+  const from = message.from;
+  console.log(`👤 ${from}: audio`);
+
+  if (!userSessions.has(from)) {
+    userSessions.set(from, [{ role: 'system', content: GERMAN_PROMPT }]);
+    console.log(`🆕 Nueva sesión para: ${from} (prompt agregado)`);
+  }
+
+  const userSession = userSessions.get(from);
+
+  const response = await axios.get(
+    `https://graph.facebook.com/v18.0/${message.audio.id}`, {
+    headers: {
+      'Authorization': `Bearer ${process.env.META_ACCESS_TOKEN}`
+    }
+  })
+
+  console.log(response.data)
+
+  const folder = `tmp`
+  const fileName = `tmp/${message.audio.id}.ogg`
+  if (!fs.existsSync(folder)) {
+    fs.mkdirSync(folder, { recursive: true })
+  }
+
+  const imageResponse = await axios.get(response.data.url, {
+    responseType: 'arraybuffer',
+    headers: {
+      'Authorization': `Bearer ${process.env.META_ACCESS_TOKEN}`
+    }
+  });
+
+  fs.writeFileSync(fileName, imageResponse.data);
+  console.log("audio guardado")
+
+  //transcribo el audio
+  const transcription = await openai.audio.transcriptions.create({
+    file: fs.createReadStream(`./${fileName}`),
+    model: "whisper-1",
+  });
+
+
+
+  userSession.push({
+    role: 'user', content: `Transcripción de audio: ${transcription.text}`
+  });
+
+
+  const MAX_CONTEXT_MESSAGES = 12; // configurable si lo deseas
+  const hasSystem = userSession.length > 0 && userSession[0].role === 'system';
+  const startIndex = hasSystem ? 1 : 0;
+  const nonSystemCount = userSession.length - startIndex;
+  if (nonSystemCount > MAX_CONTEXT_MESSAGES) {
+    const removeCount = nonSystemCount - MAX_CONTEXT_MESSAGES;
+    // eliminar mensajes más antiguos (después del prompt)
+    userSession.splice(startIndex, removeCount);
+  }
+
+  try {
+    await sendTypingIndicator(from, true);
+
+    const aiResponse = await generateAIResponse(userSession, from);
+
+    await sendTypingIndicator(from, false);
+
+    userSession.push({ role: "assistant", content: aiResponse });
+
+    await sendWhatsAppMessage(from, aiResponse);
+
+    /* if (isSessionEnded(userSession)) {
+      userSessions.delete(from);
+    } */
+  } catch (error) {
+    console.error('❌ Error procesando mensaje:', error);
+    await sendWhatsAppMessage(from, '⚠️ Lo siento, estoy teniendo problemas técnicos. Por favor intenta más tarde.');
+  }
+
+
+
+}
 
 async function processImage(message) {
   const from = message.from;
@@ -522,9 +603,9 @@ async function processImage(message) {
 
     await sendWhatsAppMessage(from, aiResponse);
 
-    if (isSessionEnded(userSession)) {
+    /* if (isSessionEnded(userSession)) {
       userSessions.delete(from);
-    }
+    } */
   } catch (error) {
     console.error('❌ Error procesando mensaje:', error);
     await sendWhatsAppMessage(from, '⚠️ Lo siento, estoy teniendo problemas técnicos. Por favor intenta más tarde.');
