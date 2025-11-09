@@ -576,9 +576,9 @@ async function processMessage(message) {
 
     await sendWhatsAppMessage(from, aiResponse);
 
-    if (isSessionEnded(userSession)) {
+    /* if (isSessionEnded(userSession)) {
       userSessions.delete(from);
-    }
+    } */
   } catch (error) {
     console.error('❌ Error procesando mensaje:', error);
     await sendWhatsAppMessage(from, '⚠️ Lo siento, estoy teniendo problemas técnicos. Por favor intenta más tarde.');
