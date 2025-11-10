@@ -715,7 +715,7 @@ async function processImage(message) {
       {
         type: "image_url",
         image_url: {
-          url: `https://botccr-node.onrender.com/${fileName}`
+          url: `https://connect.pegasoconsulting.net/api3002/${fileName}`
         }
       },
     ]
